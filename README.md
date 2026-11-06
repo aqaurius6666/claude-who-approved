@@ -52,6 +52,8 @@ In your **user** `settings.json` (`~/.claude/settings.json`), under `pluginConfi
 | --- | --- | --- |
 | `logDir` | `~/.claude/.log/who-approved` | Folder that holds `<project>/approvals.jsonl`. Absolute or `~/...`. |
 | `inputMax` | `400` | Characters of command or tool input to keep per line. `0` keeps none. |
+| `includeTools` | all tools | Log only these tools, e.g. `["Bash", "mcp__github__*"]`. Exact names; `*` matches any characters. Case-sensitive. |
+| `excludeTools` | none | Never log these tools, e.g. `["Read", "mcp__*"]`. Same matching. Applied after `includeTools`. |
 
 - Read from **user**, **project**, **local**, **flag** (`--settings`) and **policy** (managed) settings. The last of user → project → local → flag → policy setting a key wins.
 - **Project and local can override the log.** A cloned repo's `.claude/settings.json` can move the log or blank the commands. Pin `logDir` in policy settings if that matters.
@@ -64,10 +66,10 @@ Each line has `"source": "who-approved"`.
 
 | Field | Meaning |
 | --- | --- |
-| `event` | `approval:<decided_by>:<outcome>`, e.g. `approval:user:denied`. `decided_by`: `hook`, `settings_rule`, `classifier`, `user`, `core`, `user_or_classifier`, or `unknown`. `outcome`: `ran`, `denied`, or `error`. |
+| `event` | `approval:<decided_by>:<outcome>`, e.g. `approval:user:denied`. `decided_by`: `hook`, `settings_rule`, `classifier`, `user`, `core`, `user_or_classifier`, or `unknown`. `outcome`: `ran` or `denied` (a tool that ran and failed is still `ran`). |
 | `permission_mode` | The session's mode when the call ran, if known. |
 | `rule`, `hook`, `plugin`, `setting`, `reason` | What stood behind the verdict. |
-| `deny` | The refusal or error text, up to `inputMax` characters. |
+| `deny` | The refusal text when `denied`, up to `inputMax` characters. |
 | `normalized_command` / `input` | The Bash command, or the other tool's input as JSON, up to `inputMax` characters. |
 | `tool`, `tool_use_id`, `session` | Which call. |
 | `ts` | When the call ended (RFC 3339, UTC). |
@@ -81,7 +83,7 @@ Built and tested for **auto mode**.
 - **A classifier denial may not be logged as `classifier`.** It depends on the `PermissionDenied` classic event.
 - **`session` can name the wrong session** when several sessions run in one project. Join lines on `tool_use_id`, not `session`.
 - **A write can be lost**: a toast says so, and that call's line is missing.
-- **A user's "No" is detected by its fixed message.** Without it, the outcome is `error`.
+- **A user's "No" is detected by its fixed message.** Without it, the outcome is `ran`.
 - **The log holds command text.** A command that contains a secret leaks it into the local file. Set `inputMax: 0` to keep none.
 - Calls from Claude Code's helper agents (for example prompt suggestions) can show as `unknown`.
 

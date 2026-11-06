@@ -9,7 +9,8 @@ export const INPUT_MAX = 400
 
 type Options = Readonly<Record<string, unknown>>
 
-export type Config = { logDir?: string; inputMax: number; errors: string[] }
+export type Tools = { includeTools?: string[]; excludeTools?: string[] }
+export type Config = Tools & { logDir?: string; inputMax: number; errors: string[] }
 
 // Keys under pluginConfigs: "who-approved" or "who-approved@<marketplace>".
 // The last source setting a key wins.
@@ -41,7 +42,27 @@ export function configOf(options: Options, home: string): Config {
     if (typeof n === 'number' && Number.isInteger(n) && n >= 0) inputMax = n
     else errors.push(`inputMax: needs a whole number >= 0, got ${JSON.stringify(n)}`)
   }
-  return { logDir, inputMax, errors }
+  const tools = (key: 'includeTools' | 'excludeTools') => {
+    const v = options[key]
+    if (v === undefined) return undefined
+    if (Array.isArray(v) && v.every(t => typeof t === 'string')) return v as string[]
+    errors.push(`${key}: needs a list of tool names, got ${JSON.stringify(v)}`)
+    return undefined
+  }
+  return { logDir, inputMax, includeTools: tools('includeTools'), excludeTools: tools('excludeTools'), errors }
+}
+
+// A name with `*` matches any run of characters (`mcp__*`); else exact.
+function matches(patterns: readonly string[], tool: string): boolean {
+  return patterns.some(p => p.includes('*')
+    ? new RegExp(`^${p.split('*').map(s => s.replace(/[.+?^${}()|[\]\\]/g, '\\$&')).join('.*')}$`).test(tool)
+    : p === tool)
+}
+
+// includeTools set: only those. excludeTools then drops from what is left.
+export function logsTool(t: Tools, tool: string): boolean {
+  if (t.includeTools && !matches(t.includeTools, tool)) return false
+  return !(t.excludeTools && matches(t.excludeTools, tool))
 }
 
 export type Env = { claudeConfigDir?: string; home?: string }

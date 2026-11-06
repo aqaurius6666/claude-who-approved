@@ -98,6 +98,19 @@ test('follows CLAUDE_CONFIG_DIR', async ($, on) => {
   expect(tees[0]!.path).toBe('/h/.claude-personal/.log/who-approved/-Users-me-codes-x/approvals.jsonl')
 })
 
+test('a tool that ran and failed is ran, with no deny text', async ($, on) => {
+  const { clock, tees } = await run($, on)
+  on('tool.check', () => ({ decision: 'allow', hook: 'PreToolUse' }))
+  on('tool.call', () => ({ result: { isError: true, text: 'Exit code 1' } }) as never)
+
+  await $.session.start({ cwd: '/Users/me/codes/x', surface: 'desktop', isInteractive: true })
+  await $.tool.call({ tool: 'Bash', command: 'false' })
+  await clock.advance(200)
+
+  expect(tees[0]!.line.event).toBe('approval:hook:ran')
+  expect(tees[0]!.line.deny).toBeUndefined()
+})
+
 test('later sources win: local over project over user', async ($, on) => {
   const { clock, tees } = await run($, on, {
     sh: '\n/h\n',
