@@ -1,5 +1,5 @@
 import type { EngineInterface, Register } from 'claude-code'
-import { configOf, logRoot, NAME, optionsOf, SOURCES } from './config'
+import { configOf, logRoot, logsTool, NAME, optionsOf, SOURCES, type Tools } from './config'
 
 // Appends one line per tool call to <root>/<project>/approvals.jsonl,
 // saying who let it through: a hook, a settings rule, the auto-mode
@@ -43,7 +43,7 @@ export function logSlug(transcriptPath: string | undefined, cwd: string): string
   return cwd.replace(/[^a-zA-Z0-9]/g, '-')
 }
 
-type Resolved = { root: string; inputMax: number }
+type Resolved = Tools & { root: string; inputMax: number }
 
 async function resolve($: EngineInterface): Promise<Resolved | undefined> {
   const env = await $.process.run([
@@ -54,9 +54,13 @@ async function resolve($: EngineInterface): Promise<Resolved | undefined> {
   const sources = await Promise.all(SOURCES.map(source => $.settings.read({ source }).catch(() => undefined)))
   const cfg = configOf(optionsOf(sources), home)
   for (const err of cfg.errors) $.ui.toast(`${NAME}: config: ${err}`)
-  const root = logRoot(cfg.dir, { claudeConfigDir, home })
-  return root ? { root, inputMax: cfg.inputMax } : undefined
+  const root = logRoot(cfg.logDir, { claudeConfigDir, home })
+  return root
+    ? { root, inputMax: cfg.inputMax, includeTools: cfg.includeTools, excludeTools: cfg.excludeTools }
+    : undefined
 }
+
+const WRITE_DELAY_MS = 200
 
 // $.fs.write overwrites; tee -a appends (O_APPEND).
 async function appendLine($: EngineInterface, dir: string, text: string): Promise<void> {
@@ -145,44 +149,45 @@ export const register: Register = on => {
       resolved = await resolve($).catch(() => undefined)
     }
     if (!resolved) {
-      $.ui.toast(`${NAME}: log dir unknown (no HOME, no dir set)`)
+      $.ui.toast(`${NAME}: log dir unknown (no HOME, no logDir set)`)
       return r
     }
+    if (!logsTool(resolved, e.tool)) return r
 
     // inputMax 0 keeps no command text at all.
     const max = resolved.inputMax
     const clip = (s: string | undefined) => (s && max ? s.slice(0, max) : undefined)
     const { tool, tool_use_id, consent, ...args } = e as Record<string, unknown>
     const by = decidedBy(c, mode, personAsked, classifierDenied)
+    // A permission refusal reaches tool.call hooks as isError (reason in
+    // text), not as deny. A user's "no" in the dialog looks like a tool error.
+    // Any other tool error (e.g. a non-zero exit) is the tool's, not the approval's: 'ran'.
+    const refused = r.deny !== undefined || c?.verdict === 'deny' || classifierDenied ||
+      (!!r.isError && !!r.text?.startsWith("The user doesn't want to proceed"))
+    const outcome = refused ? 'denied' : 'ran'
     const line = {
       ts: new Date().toISOString().replace(/\.\d+Z$/, 'Z'), // RFC3339, no millis
-      event: `approval:${by}`,
+      event: `approval:${by}:${outcome}`,
       source: NAME,
       session: sessionId,
       tool: e.tool,
       tool_use_id: id,
       normalized_command: typeof args.command === 'string' ? clip(args.command) : undefined,
       input: typeof args.command === 'string' ? undefined : clip(JSON.stringify(args)),
-      verdict: c?.verdict,
-      decided_by: by,
-      // A permission refusal reaches tool.call hooks as isError (reason in
-      // text), not as deny. A user's "no" in the dialog looks like a tool error.
-      outcome: r.deny !== undefined || c?.verdict === 'deny' || classifierDenied ||
-        (r.isError && r.text?.startsWith("The user doesn't want to proceed"))
-        ? 'denied' : r.isError ? 'error' : 'ran',
       permission_mode: mode,
       rule: c?.rule,
       hook: c?.hook,
       plugin: c?.plugin,
       setting: c?.setting,
       reason: c?.reason,
-      deny: clip(r.deny ?? (r.isError ? r.text : undefined)),
+      deny: refused ? clip(r.deny ?? r.text) : undefined,
     }
     const dir = `${resolved.root}/${logSlug(transcriptPath, cwd)}`
     // A denied or interrupted call aborts this dispatch and any $.process.run
-    // started in it, so write from a timer, which runs on its own.
+    // started in it. A 0ms timer still fires inside that window (mkdir was
+    // aborted in the log), so wait until the dispatch has settled.
     const text = JSON.stringify(line) + '\n'
-    $.clock.after(0, () => { void appendLine($, dir, text) })
+    $.clock.after(WRITE_DELAY_MS, () => { void appendLine($, dir, text) })
     return r
   })
 }

@@ -1,16 +1,16 @@
 // Settings → where to log and how much command text to keep.
 //
-// Read only the user's own sources: this is an audit log, so a cloned repo's
-// .claude/settings.json (project) or a file the agent can write (local) must not
-// move the log or blank the command text.
+// Gotcha: project and local are read too, so a cloned repo's .claude/settings.json
+// can move the log or blank the command text (inputMax: 0).
 
 export const NAME = 'who-approved'
-export const SOURCES = ['user', 'flag', 'policy'] as const
+export const SOURCES = ['user', 'project', 'local', 'flag', 'policy'] as const
 export const INPUT_MAX = 400
 
 type Options = Readonly<Record<string, unknown>>
 
-export type Config = { dir?: string; inputMax: number; errors: string[] }
+export type Tools = { includeTools?: string[]; excludeTools?: string[] }
+export type Config = Tools & { logDir?: string; inputMax: number; errors: string[] }
 
 // Keys under pluginConfigs: "who-approved" or "who-approved@<marketplace>".
 // The last source setting a key wins.
@@ -29,12 +29,12 @@ export function optionsOf(sources: readonly unknown[]): Options {
 
 export function configOf(options: Options, home: string): Config {
   const errors: string[] = []
-  let dir: string | undefined
-  if (options.dir !== undefined) {
-    const raw = options.dir
+  let logDir: string | undefined
+  if (options.logDir !== undefined) {
+    const raw = options.logDir
     const expanded = typeof raw === 'string' && home ? raw.replace(/^~(?=\/|$)/, home) : raw
-    if (typeof expanded === 'string' && expanded.startsWith('/')) dir = expanded.replace(/\/+$/, '')
-    else errors.push(`dir: needs an absolute path or ~/..., got ${JSON.stringify(raw)}`)
+    if (typeof expanded === 'string' && expanded.startsWith('/')) logDir = expanded.replace(/\/+$/, '')
+    else errors.push(`logDir: needs an absolute path or ~/..., got ${JSON.stringify(raw)}`)
   }
   let inputMax = INPUT_MAX
   if (options.inputMax !== undefined) {
@@ -42,15 +42,35 @@ export function configOf(options: Options, home: string): Config {
     if (typeof n === 'number' && Number.isInteger(n) && n >= 0) inputMax = n
     else errors.push(`inputMax: needs a whole number >= 0, got ${JSON.stringify(n)}`)
   }
-  return { dir, inputMax, errors }
+  const tools = (key: 'includeTools' | 'excludeTools') => {
+    const v = options[key]
+    if (v === undefined) return undefined
+    if (Array.isArray(v) && v.every(t => typeof t === 'string')) return v as string[]
+    errors.push(`${key}: needs a list of tool names, got ${JSON.stringify(v)}`)
+    return undefined
+  }
+  return { logDir, inputMax, includeTools: tools('includeTools'), excludeTools: tools('excludeTools'), errors }
+}
+
+// A name with `*` matches any run of characters (`mcp__*`); else exact.
+function matches(patterns: readonly string[], tool: string): boolean {
+  return patterns.some(p => p.includes('*')
+    ? new RegExp(`^${p.split('*').map(s => s.replace(/[.+?^${}()|[\]\\]/g, '\\$&')).join('.*')}$`).test(tool)
+    : p === tool)
+}
+
+// includeTools set: only those. excludeTools then drops from what is left.
+export function logsTool(t: Tools, tool: string): boolean {
+  if (t.includeTools && !matches(t.includeTools, tool)) return false
+  return !(t.excludeTools && matches(t.excludeTools, tool))
 }
 
 export type Env = { claudeConfigDir?: string; home?: string }
 
-// The folder that holds <project>/approvals.jsonl: dir if set, else
+// The folder that holds <project>/approvals.jsonl: logDir if set, else
 // <claude config dir>/.log/who-approved.
-export function logRoot(dir: string | undefined, env: Env): string | undefined {
-  if (dir) return dir
+export function logRoot(logDir: string | undefined, env: Env): string | undefined {
+  if (logDir) return logDir
   const claude = env.claudeConfigDir || (env.home ? `${env.home}/.claude` : '')
   return claude ? `${claude}/.log/${NAME}` : undefined
 }

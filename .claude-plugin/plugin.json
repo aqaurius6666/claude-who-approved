@@ -3,6 +3,6 @@
   "version": "0.1.0",
   "description": "Logs who approved each tool call (a hook, a settings rule, the auto-mode classifier, or a person) to a local JSONL file. Log only: never changes the decision.",
   "author": {
-    "name": "nguyen.duy.vu"
+    "name": "aqaurius6666"
   }
 }

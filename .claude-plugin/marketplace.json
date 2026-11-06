@@ -2,7 +2,7 @@
   "name": "who-approved",
   "description": "Logs who approved each Claude Code tool call.",
   "owner": {
-    "name": "nguyen.duy.vu"
+    "name": "aqaurius6666"
   },
   "plugins": [
     {
