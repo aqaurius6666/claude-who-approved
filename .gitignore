@@ -1,0 +1,5 @@
+# written by /plugin-types; regenerate per Claude Code version
+.claude/types/
+node_modules/
+bun.lock
+.claude/settings.local.json

@@ -1,0 +1,14 @@
+{
+  "name": "who-approved",
+  "description": "Logs who approved each Claude Code tool call.",
+  "owner": {
+    "name": "nguyen.duy.vu"
+  },
+  "plugins": [
+    {
+      "name": "who-approved",
+      "source": "./",
+      "description": "One JSONL line per tool call: who let it through and what happened."
+    }
+  ]
+}

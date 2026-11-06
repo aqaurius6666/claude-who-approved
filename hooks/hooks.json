@@ -1,0 +1,4 @@
+{
+  "description": "Logs who approved each tool call",
+  "modules": ["./who-approved.ts"]
+}
