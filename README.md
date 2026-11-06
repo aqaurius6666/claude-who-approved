@@ -28,7 +28,7 @@ One line per tool call, appended to:
 
 ```bash
 tail -f ~/.claude/.log/who-approved/<project>/approvals.jsonl \
-  | jq -c '{decided_by, outcome, permission_mode, tool, cmd: (.normalized_command // .input)[0:80]}'
+  | jq -c '{event, permission_mode, tool, cmd: (.normalized_command // .input)[0:80]}'
 ```
 
 ## Config
@@ -40,7 +40,7 @@ In your **user** `settings.json` (`~/.claude/settings.json`), under `pluginConfi
   "pluginConfigs": {
     "who-approved": {
       "options": {
-        "dir": "~/audit/claude",
+        "logDir": "~/audit/claude",
         "inputMax": 400
       }
     }
@@ -50,22 +50,21 @@ In your **user** `settings.json` (`~/.claude/settings.json`), under `pluginConfi
 
 | Key | Default | Meaning |
 | --- | --- | --- |
-| `dir` | `~/.claude/.log/who-approved` | Folder that holds `<project>/approvals.jsonl`. Absolute or `~/...`. |
+| `logDir` | `~/.claude/.log/who-approved` | Folder that holds `<project>/approvals.jsonl`. Absolute or `~/...`. |
 | `inputMax` | `400` | Characters of command or tool input to keep per line. `0` keeps none. |
 
-- Read from the **user**, **flag** (`--settings`) and **policy** (managed) settings only. **Project and local settings are ignored**: this is an audit log, so a cloned repo's `.claude/settings.json` must not move it or blank the commands. The last of user → flag → policy setting a key wins.
+- Read from **user**, **project**, **local**, **flag** (`--settings`) and **policy** (managed) settings. The last of user → project → local → flag → policy setting a key wins.
+- **Project and local can override the log.** A cloned repo's `.claude/settings.json` can move the log or blank the commands. Pin `logDir` in policy settings if that matters.
 - Read once per session. Restart Claude Code after an edit.
 - A bad value shows a toast and falls back to the default.
 
 ## Log schema
 
-Each line has `"source": "who-approved"` and `"event": "approval:<decided_by>"`.
+Each line has `"source": "who-approved"`.
 
 | Field | Meaning |
 | --- | --- |
-| `decided_by` | `hook`, `settings_rule`, `classifier`, `user`, `core`, `user_or_classifier`, or `unknown`. |
-| `verdict` | Claude Code's permission verdict before the mode settled an `ask`: `allow`, `ask`, or `deny`. |
-| `outcome` | `ran`, `denied`, or `error`. |
+| `event` | `approval:<decided_by>:<outcome>`, e.g. `approval:user:denied`. `decided_by`: `hook`, `settings_rule`, `classifier`, `user`, `core`, `user_or_classifier`, or `unknown`. `outcome`: `ran`, `denied`, or `error`. |
 | `permission_mode` | The session's mode when the call ran, if known. |
 | `rule`, `hook`, `plugin`, `setting`, `reason` | What stood behind the verdict. |
 | `deny` | The refusal or error text, up to `inputMax` characters. |

@@ -57,13 +57,13 @@ test('writes one approval line per call', async ($, on) => {
   await $.tool.call({ tool: 'Bash', command: 'rg -l x docs' })
   await $.tool.call({ tool: 'Read', file_path: 'README.md' })
   await $.tool.call({ tool: 'Bash', command: 'ls $(echo docs)' })
-  await clock.advance(0) // writes run from a timer
+  await clock.advance(200) // writes run from a timer
 
   expect(tees[0]!.path).toBe('/h/.claude/.log/who-approved/-Users-me-codes-x/approvals.jsonl')
   expect(tees.map(t => t.line.event)).toEqual([
-    'approval:hook',
-    'approval:settings_rule',
-    'approval:user', // dialog (PermissionRequest) opened → a person decided
+    'approval:hook:ran',
+    'approval:settings_rule:ran',
+    'approval:user:ran', // dialog (PermissionRequest) opened → a person decided
   ])
   expect(tees[0]!.line.source).toBe('who-approved')
 })
@@ -81,10 +81,9 @@ test('classifier deny is attributed by tool_use_id', async ($, on) => {
   await $.session.start({ cwd: '/Users/me/codes/x', surface: 'desktop', isInteractive: true })
   await $.classic.UserPromptSubmit({ prompt: 'go', permission_mode: 'auto', transcript_path: TRANSCRIPT } as never)
   await $.tool.call({ tool: 'Bash', command: 'rm -rf build', tool_use_id: 'tu1' } as never)
-  await clock.advance(0)
+  await clock.advance(200)
 
-  expect(tees.map(t => t.line.event)).toEqual(['approval:classifier'])
-  expect(tees[0]!.line.outcome).toBe('denied')
+  expect(tees.map(t => t.line.event)).toEqual(['approval:classifier:denied'])
 })
 
 test('follows CLAUDE_CONFIG_DIR', async ($, on) => {
@@ -94,17 +93,18 @@ test('follows CLAUDE_CONFIG_DIR', async ($, on) => {
 
   await $.session.start({ cwd: '/Users/me/codes/x', surface: 'desktop', isInteractive: true })
   await $.tool.call({ tool: 'Read', file_path: 'a' })
-  await clock.advance(0)
+  await clock.advance(200)
 
   expect(tees[0]!.path).toBe('/h/.claude-personal/.log/who-approved/-Users-me-codes-x/approvals.jsonl')
 })
 
-test('user settings set dir and inputMax; project settings are ignored', async ($, on) => {
+test('later sources win: local over project over user', async ($, on) => {
   const { clock, tees } = await run($, on, {
     sh: '\n/h\n',
     settings: {
-      user: { pluginConfigs: { 'who-approved': { options: { dir: '~/audit', inputMax: 0 } } } },
-      project: { pluginConfigs: { 'who-approved': { options: { dir: '/tmp/evil', inputMax: 400 } } } },
+      user: { pluginConfigs: { 'who-approved': { options: { logDir: '/user', inputMax: 400 } } } },
+      project: { pluginConfigs: { 'who-approved': { options: { logDir: '~/audit' } } } },
+      local: { pluginConfigs: { 'who-approved@who-approved': { options: { inputMax: 0 } } } },
     },
   })
   on('tool.check', () => ({ decision: 'allow', hook: 'PreToolUse' }))
@@ -112,7 +112,7 @@ test('user settings set dir and inputMax; project settings are ignored', async (
 
   await $.session.start({ cwd: '/Users/me/codes/x', surface: 'desktop', isInteractive: true })
   await $.tool.call({ tool: 'Bash', command: 'echo $SECRET' })
-  await clock.advance(0)
+  await clock.advance(200)
 
   expect(tees[0]!.path).toBe('/h/audit/-Users-me-codes-x/approvals.jsonl')
   expect(tees[0]!.line.normalized_command).toBeUndefined()

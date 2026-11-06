@@ -54,9 +54,11 @@ async function resolve($: EngineInterface): Promise<Resolved | undefined> {
   const sources = await Promise.all(SOURCES.map(source => $.settings.read({ source }).catch(() => undefined)))
   const cfg = configOf(optionsOf(sources), home)
   for (const err of cfg.errors) $.ui.toast(`${NAME}: config: ${err}`)
-  const root = logRoot(cfg.dir, { claudeConfigDir, home })
+  const root = logRoot(cfg.logDir, { claudeConfigDir, home })
   return root ? { root, inputMax: cfg.inputMax } : undefined
 }
+
+const WRITE_DELAY_MS = 200
 
 // $.fs.write overwrites; tee -a appends (O_APPEND).
 async function appendLine($: EngineInterface, dir: string, text: string): Promise<void> {
@@ -145,7 +147,7 @@ export const register: Register = on => {
       resolved = await resolve($).catch(() => undefined)
     }
     if (!resolved) {
-      $.ui.toast(`${NAME}: log dir unknown (no HOME, no dir set)`)
+      $.ui.toast(`${NAME}: log dir unknown (no HOME, no logDir set)`)
       return r
     }
 
@@ -154,22 +156,20 @@ export const register: Register = on => {
     const clip = (s: string | undefined) => (s && max ? s.slice(0, max) : undefined)
     const { tool, tool_use_id, consent, ...args } = e as Record<string, unknown>
     const by = decidedBy(c, mode, personAsked, classifierDenied)
+    // A permission refusal reaches tool.call hooks as isError (reason in
+    // text), not as deny. A user's "no" in the dialog looks like a tool error.
+    const outcome = r.deny !== undefined || c?.verdict === 'deny' || classifierDenied ||
+      (r.isError && r.text?.startsWith("The user doesn't want to proceed"))
+      ? 'denied' : r.isError ? 'error' : 'ran'
     const line = {
       ts: new Date().toISOString().replace(/\.\d+Z$/, 'Z'), // RFC3339, no millis
-      event: `approval:${by}`,
+      event: `approval:${by}:${outcome}`,
       source: NAME,
       session: sessionId,
       tool: e.tool,
       tool_use_id: id,
       normalized_command: typeof args.command === 'string' ? clip(args.command) : undefined,
       input: typeof args.command === 'string' ? undefined : clip(JSON.stringify(args)),
-      verdict: c?.verdict,
-      decided_by: by,
-      // A permission refusal reaches tool.call hooks as isError (reason in
-      // text), not as deny. A user's "no" in the dialog looks like a tool error.
-      outcome: r.deny !== undefined || c?.verdict === 'deny' || classifierDenied ||
-        (r.isError && r.text?.startsWith("The user doesn't want to proceed"))
-        ? 'denied' : r.isError ? 'error' : 'ran',
       permission_mode: mode,
       rule: c?.rule,
       hook: c?.hook,
@@ -180,9 +180,10 @@ export const register: Register = on => {
     }
     const dir = `${resolved.root}/${logSlug(transcriptPath, cwd)}`
     // A denied or interrupted call aborts this dispatch and any $.process.run
-    // started in it, so write from a timer, which runs on its own.
+    // started in it. A 0ms timer still fires inside that window (mkdir was
+    // aborted in the log), so wait until the dispatch has settled.
     const text = JSON.stringify(line) + '\n'
-    $.clock.after(0, () => { void appendLine($, dir, text) })
+    $.clock.after(WRITE_DELAY_MS, () => { void appendLine($, dir, text) })
     return r
   })
 }
