@@ -10,6 +10,8 @@ Claude Code shows none of these allows in the UI. One file now answers *"why did
 - 🪶 **Log only** — never allows, denies or rewrites a call.
 - 🏠 **Local** — a plain file on your disk. Nothing leaves the machine.
 
+![who-approved demo: Claude Code on the left, the approvals log filling in on the right](docs/demo.gif)
+
 ```json
 {"ts":"2026-11-06T09:41:12Z","event":"approval:classifier:ran","source":"who-approved","tool":"Bash","normalized_command":"git push -u origin main","permission_mode":"auto","tool_use_id":"toolu_01Ab…"}
 {"ts":"2026-11-06T09:41:30Z","event":"approval:settings_rule:ran","source":"who-approved","tool":"Bash","normalized_command":"bun test","rule":"Bash(bun test:*)","tool_use_id":"toolu_01Cd…"}
